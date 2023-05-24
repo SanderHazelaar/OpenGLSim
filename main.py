@@ -54,12 +54,13 @@ class GraphicsEngine:
     def save_data(self):
         positions = np.array(self.drone.controller.pos_over_time)
         velocities = np.array(self.drone.controller.velocities_over_time)
-        c_variables = np.array(self.drone.controller.c_var_over_time)
+        divergences = np.array(self.drone.controller.divergence_over_time)
         time = np.array(self.drone.controller.time_over_time) - self.drone.controller.time_over_time[0]
-        set_points = np.array(self.drone.controller.set_point_over_time)
+        set_points = np.array(self.drone.controller.theta_sp_over_time)
         gains = np.array(self.drone.controller.gain_over_time)
+        theta = np.array(self.drone.controller.theta_over_time)
         state_inputs = np.array(self.drone.controller.state_input_over_time)
-        data = np.vstack([time, positions, velocities, c_variables, set_points, gains, state_inputs])
+        data = np.vstack([time, positions, velocities, divergences, set_points, gains, theta, state_inputs])
         filename = os.path.join('sim_data', self.drone.controller.name)
         np.save(filename, data)
 

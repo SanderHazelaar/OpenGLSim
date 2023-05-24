@@ -89,27 +89,27 @@ class DynamicBaseModel(BaseModel):
         Iyy = 0.005
         Izz = 0.005
 
-        # States in body frame
-        rot_matrix = glm.mat3(up, right, forward)
-        u = np.zeros(6)
-        # u[0:3] = np.matmul(rot_matrix, state_input[0:3])
-        # u[3:6] = np.matmul(rot_matrix, state_input[3:6])
-        # states[6:9] = np.matmul(rot_matrix, states[6:9])
-        # states[9:12] = np.matmul(rot_matrix, states[9:12])
-
         # Dynamics
-        x, y, z, theta, phi, psi, vx, vy, vz, p, q, r = states
-        az = - 9.81*glm.sin(theta) - drag_factor/mass*vz
-        ax = 9.81*glm.cos(theta)*glm.sin(phi) - drag_factor/mass*vx
-        ay = 9.81*glm.cos(theta)*glm.cos(phi) - state_input[3] - drag_factor/mass*vy
-        q_dot = q*r*((Iyy-Izz)/Ixx) + state_input[0]/Ixx
-        r_dot = p*r*((Izz-Ixx)/Iyy) + state_input[1]/Iyy
-        p_dot = p*q*((Ixx-Iyy)/Izz) + state_input[2]/Izz
+        rot_matrix = glm.mat3(right, up, forward)
+        x, y, z, theta, psi, phi, vx, vy, vz, q, r, p = states
+        state_derivatives = np.zeros(6)
+        thrust_inertial = np.matmul(rot_matrix, [0, state_input[3]/mass, 0])
+        drag = -drag_factor/mass * np.array([vx, vy, vz])
+        gravity = np.array([0, -9.81, 0])
 
-        return np.concatenate([states[6:12], [ax, ay, az, q_dot, r_dot, p_dot]])
+        # TODO: check if centripetal forces are correct
+        # Translations
+        state_derivatives[0:3] = gravity + thrust_inertial + drag
+
+        # Rotations
+        state_derivatives[3] = p*r*((Iyy-Izz)/Ixx) + state_input[0]/Ixx  # q_dot
+        state_derivatives[4] = p*q*((Izz-Ixx)/Iyy) + state_input[1]/Iyy  # r_dot
+        state_derivatives[5] = q*r*((Ixx-Iyy)/Izz) + state_input[2]/Izz  # p_dot
+
+        return np.concatenate([states[6:12], state_derivatives])
 
     def update(self):
-        self.controller.constant_r()
+        self.controller.control()
         self.state_input = self.controller.output
         self.update_states()
         self.m_model = self.get_model_matrix()
