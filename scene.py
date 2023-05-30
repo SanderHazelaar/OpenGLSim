@@ -19,7 +19,7 @@ class Scene:
 
         add(Cube(app, pos=(0, 0, 0)))
 
-        add(Drone(app, pos=(0, 0, -12), rot=(0, 0, 0), velocity=(0, 0, 0)))
+        add(Drone(app, pos=(0, 0, -10), rot=(0, 0, 0), velocity=(0, 0, 0)))
 
     def render(self):
         for obj in self.objects:

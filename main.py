@@ -1,4 +1,6 @@
 import os
+
+import numpy as np
 import pygame as pg
 import moderngl as mgl
 import sys
@@ -52,22 +54,16 @@ class GraphicsEngine:
                 sys.exit()
 
     def save_data(self):
-        positions = np.array(self.drone.controller.pos_over_time)
-        velocities = np.array(self.drone.controller.velocities_over_time)
+        states = np.array(self.drone.controller.states_over_time)
         divergences = np.array(self.drone.controller.divergence_over_time)
+        distances = np.array(self.drone.controller.distances_over_time)
+        distance_est = np.array(self.drone.controller.distance_est_over_time)
         time = np.array(self.drone.controller.time_over_time) - self.drone.controller.time_over_time[0]
-        set_points = np.array(self.drone.controller.theta_sp_over_time)
         gains = np.array(self.drone.controller.gain_over_time)
-        theta = np.array(self.drone.controller.theta_over_time)
         state_inputs = np.array(self.drone.controller.state_input_over_time)
-        data = np.vstack([time, positions, velocities, divergences, set_points, gains, theta, state_inputs])
+        data = np.block([[np.transpose(states)], [time], [divergences], [distances], [gains], [distance_est]])
         filename = os.path.join('sim_data', self.drone.controller.name)
         np.save(filename, data)
-
-        # with open(filename, 'w') as filehandle:
-        #     for i in range(len(positions)):
-        #         filehandle.writelines(f"{time[i]}, {positions[i]}, {velocities[i]}, {c_variables[i]}\n")
-        #     filehandle.close()
 
     def render(self):
         # clear framebuffer
