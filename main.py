@@ -9,6 +9,7 @@ from camera import Camera
 from light import Light
 from mesh import Mesh
 from scene import Scene
+from logger import Logger
 
 
 class GraphicsEngine:
@@ -44,26 +45,16 @@ class GraphicsEngine:
         self.scene = Scene(self)
         # drone
         self.drone = self.scene.objects[1]
+        # logger
+        self.logger = Logger(self)
 
     def check_events(self):
         for event in pg.event.get():
             if event.type == pg.QUIT or (event.type == pg.KEYDOWN and event.key == pg.K_ESCAPE):
-                self.save_data()
+                self.logger.save_log_file()
                 self.mesh.destroy()
                 pg.quit()
                 sys.exit()
-
-    def save_data(self):
-        states = np.array(self.drone.controller.states_over_time)
-        divergences = np.array(self.drone.controller.divergence_over_time)
-        distances = np.array(self.drone.controller.distances_over_time)
-        distance_est = np.array(self.drone.controller.distance_est_over_time)
-        time = np.array(self.drone.controller.time_over_time) - self.drone.controller.time_over_time[0]
-        gains = np.array(self.drone.controller.gain_over_time)
-        state_inputs = np.array(self.drone.controller.state_input_over_time)
-        data = np.block([[np.transpose(states)], [time], [divergences], [distances], [gains], [distance_est]])
-        filename = os.path.join('sim_data', self.drone.controller.name)
-        np.save(filename, data)
 
     def render(self):
         # clear framebuffer

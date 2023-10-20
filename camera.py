@@ -9,7 +9,7 @@ SENSITIVITY = 0.04
 
 
 class Camera:
-    def __init__(self, app, position=(12, 0, 4), yaw=-180, pitch=0):
+    def __init__(self, app, position=(0, 2, -23), yaw=45, pitch=-15):
         self.app = app
         self.aspect_ratio = app.WIN_SIZE[0] / app.WIN_SIZE[1]
         self.fov = FOV

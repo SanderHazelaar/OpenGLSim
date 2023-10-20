@@ -1,3 +1,4 @@
+from logger import *
 import math
 import glm
 import numpy as np
@@ -14,24 +15,18 @@ class Controller:
         self.name = "vs"
         self.gain = GAIN
         self.set_point = SET_POINT
-        self.delay = 2
+        self.delay = 6
         self.distance = 11.8
         self.output = np.array([0, 0, 0, 2.4525])
         self.box_center = glm.vec4(0, 0, 1, 1)
-        self.img_box_center = [0, 0, 0, 0]
+        self.img_box_center_x = 0
+        self.img_box_center_y = 0
         self.center_velocity = [0, 0]
-        self.divergence = 0
-        self.divergence_var = 0
-        self.distance_est = 15
-        self.states_over_time = []
-        self.distances_over_time = []
-        self.divergence_over_time = []
-        self.delta_time_over_time = []
-        self.time_over_time = []
-        self.gain_over_time = []
-        self.state_input_over_time = []
-        self.distance_est_over_time = []
+        self.divergence = 0.1
+        self.distance_est = 0
         self.n_iteration = 0
+        self.adapt_count = 0
+        self.distance_confidence = 0
 
         # Stabilisation controller gains and set points
         self.k_y_p = -0.02
@@ -70,13 +65,20 @@ class TauController(Controller):
         self.get_distance()
         if self.n_iteration >= self.delay:
             self.get_divergence()
-            if self.divergence_var < 0.8:
-                self.estimate_distance()
-                if self.distance_est < 7:
-                    self.adapt_controller()
+            self.estimate_distance()
+            if self.distance_est < 10 and self.adapt_count == 0 and self.distance_est != 0:
+                self.gain = 13
+                self.set_point = 0.15
+                self.adapt_count = 1
+                self.distance_confidence = 0
+            if self.distance_est < 4 and self.adapt_count == 1 and self.distance_est != 0:
+                self.gain = 10
+                self.set_point = 0.2
+                self.adapt_count = 2
+                self.distance_confidence = 0
             self.outer_loop_control()
             self.inner_loop_control()
-        self.save_data()
+        self.app.logger.add_step()
         self.n_iteration += 1
 
     def vertex_projection(self):
@@ -85,23 +87,34 @@ class TauController(Controller):
         clip_box_center = np.matmul(mvp, self.box_center)
         ndc_box_center = clip_box_center / clip_box_center[3]
         new_img_box_center = ndc_box_center * np.array([self.app.WIN_SIZE[0]/2, self.app.WIN_SIZE[1]/2, 1, 1])
-        self.center_velocity = (new_img_box_center - self.img_box_center) / (self.app.delta_time / 1000)
-        self.img_box_center = new_img_box_center
-        x = self.img_box_center[0]
-        y = self.img_box_center[1]
-        self.img_box_center[0] = x * math.cos(-self.agent.states[5]) - y * math.sin(-self.agent.states[5])
-        self.img_box_center[1] = y * math.cos(-self.agent.states[5]) + x * math.sin(-self.agent.states[5])
-
+        x = new_img_box_center[0]
+        y = new_img_box_center[1]
+        # self.img_box_center_x = x * math.cos(-self.agent.states[5]) - y * math.sin(-self.agent.states[5])
+        # self.img_box_center_y = y * math.cos(-self.agent.states[5]) + x * math.sin(-self.agent.states[5])
+        # self.img_box_center_x = x * math.cos(self.agent.states[5]) + y * math.sin(self.agent.states[5])
+        # self.img_box_center_y = -x * math.sin(self.agent.states[5]) * math.cos(self.agent.states[3]) + y * math.cos(self.agent.states[5]) * math.cos(self.agent.states[3]) - 965.028 * math.sin(self.agent.states[3])
+        rx = self.agent.states[3]
+        rz = -self.agent.states[5]
+        z = 965.028
+        xmatrix = np.array([[1, 0, 0],
+                            [0, math.cos(rx), - math.sin(rx)],
+                            [0, math.sin(rx), math.cos(rx)]])
+        zmatrix = np.array([[math.cos(rz), - math.sin(rz), 0],
+                            [math.sin(rz), math.cos(rz), 0],
+                            [0, 0, 1]])
+        img_box_center = np.matmul(np.matmul(zmatrix, xmatrix), np.array([x, y, z]))
+        a = 0
     def outer_loop_control(self):
         x, y, z, theta, psi, phi, vx, vy, vz, q, r, p = self.agent.states
         divergence_error = self.set_point - self.divergence
         self.r.set_f_params(self.set_point - self.divergence)
         error_integral = self.r.integrate(self.r.t + self.app.delta_time / 1000)
-        error_diff = (self.divergence_over_time[self.n_iteration - self.delay + 1] -
-                      self.divergence_over_time[self.n_iteration - self.delay])/(self.app.delta_time / 1000)
-        mu_z = self.gain * divergence_error + 0 * error_integral - 0 * error_diff + vz
-        thrust = self.agent.mass * math.sqrt(mu_z**2 + (9.81)**2)
-        self.theta_sp = math.atan(mu_z/9.81)
+        mu_z = self.gain * divergence_error + 0 * error_integral + vz
+        mu_x = 0.005 * self.img_box_center_x + 0.005 * self.app.logger.img_box_center_x_d[self.n_iteration - self.delay]
+        mu_y = 0.1 * y
+        thrust = self.agent.mass * math.sqrt(mu_z**2 + mu_x**2 + (9.81 - mu_y)**2)
+        self.theta_sp = math.atan(mu_z/(9.81-mu_y))
+        self.phi_sp = math.asin(self.agent.mass * (mu_x/thrust))
         self.output[3] = thrust
 
     def inner_loop_control(self):
@@ -121,25 +134,23 @@ class TauController(Controller):
         self.distance = math.sqrt((z1 - z0)**2) - 1.2
 
     def get_divergence(self):
-        distance = self.distances_over_time[self.n_iteration - self.delay]
-        velocity = self.states_over_time[self.n_iteration - self.delay][8]
-        self.divergence = velocity / distance
+        distance = self.app.logger.distance[self.n_iteration - self.delay]
+        velocity = self.app.logger.state[self.n_iteration - self.delay][8]
+        self.divergence = velocity / distance # + np.random.rand() * 0.01
 
     def estimate_distance(self):
-        self.distance_est = self.agent.states[3] * 17.2 * self.divergence**(-0.808)
+        # if -0.01 < self.app.logger.divergence_d[self.n_iteration - self.delay] < 0.01 and self.divergence != 0:
+        if -0.02 < self.divergence - self.set_point < 0.02 and self.divergence != 0:
+            self.distance_confidence += 0.1
+            self.distance_est = self.agent.states[3] * 17.2 * self.divergence**(-0.808)
+            # self.distance_est = 0.7 * (math.sin(self.agent.states[3]) * self.output[3]) / \
+            #                     (self.divergence**2 + self.app.logger.divergence_d[self.n_iteration - self.delay])
+        if self.distance_confidence < 4:
+            self.distance_est = 0
 
     def adapt_controller(self):
-        self.gain = self.gain / 1.5
-        self.set_point = self.set_point * 2
-
-    def save_data(self):
-        self.states_over_time.append(self.agent.states)
-        self.distances_over_time.append(self.distance)
-        self.distance_est_over_time.append(self.distance_est)
-        self.divergence_over_time.append(self.divergence)
-        self.time_over_time.append(self.app.time)
-        self.gain_over_time.append(self.gain)
-        self.state_input_over_time.append(self.output[2])
+        self.gain = 10
+        self.set_point = 0.2
 
     def on_init(self):
         # set up the ode:
